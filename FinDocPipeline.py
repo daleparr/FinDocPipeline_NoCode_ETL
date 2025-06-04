@@ -270,6 +270,8 @@ class NLPDataProcessor:
             'equity', 'cash flow', 'margin', 'growth', 'return', 'investment'
         ]
         
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         text_lower = text.lower()
         return any(term in text_lower for term in financial_terms)
 
@@ -868,6 +870,10 @@ class DeduplicatedMetricsExtractor:
         """Calculate confidence score for extracted metric"""
         confidence = 0.5  # Base confidence
         
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
+        
         # Check for table context
         if 'table' in text.lower() or '|' in text:
             confidence += 0.2
@@ -878,7 +884,8 @@ class DeduplicatedMetricsExtractor:
             confidence += 0.2
         
         # Check for proper formatting
-        if '$' in match.group(0) or '£' in match.group(0) or '€' in match.group(0):
+        match_text = match.group(0) if match else ""
+        if '$' in match_text or '£' in match_text or '€' in match_text:
             confidence += 0.1
         
         return min(confidence, 1.0)
