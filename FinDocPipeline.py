@@ -188,6 +188,9 @@ class ComprehensiveFinancialParser:
         """Detect chart and visualization indicators"""
         indicators = []
         
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
+        
         chart_keywords = ['chart', 'graph', 'figure', 'exhibit', 'table', 'diagram']
         for keyword in chart_keywords:
             if keyword.lower() in text.lower():
@@ -328,6 +331,8 @@ class NLPDatasetExporter:
     
     def _create_text_labels(self, text):
         """Create classification labels for text"""
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         text_lower = text.lower()
         
         labels = {
@@ -375,6 +380,8 @@ class NLPDatasetExporter:
     
     def _extract_financial_entities(self, text):
         """Extract and count financial entities"""
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         text_lower = text.lower()
         
         entity_counts = {}
@@ -393,6 +400,8 @@ class NLPDatasetExporter:
     
     def _extract_contextual_features(self, text):
         """Extract contextual features for NLP"""
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         text_lower = text.lower()
         
         features = {
@@ -428,6 +437,10 @@ class NLPDatasetExporter:
         """Calculate formality score based on text characteristics"""
         if not text:
             return 0
+        
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         
         # Indicators of formal text
         formal_indicators = 0
@@ -672,6 +685,8 @@ class EnhancedVisualParser:
     def _detect_chart_types(self, text):
         """Detect chart types from extracted text"""
         detected_charts = []
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         text_lower = text.lower()
         
         for chart_type, indicators in self.chart_indicators.items():
