@@ -973,9 +973,8 @@ def main():
         }
     )
     
-    # Add meta tag to suppress browser feature warnings
+    # Minimal CSS - no meta tags to avoid conflicts
     st.markdown("""
-    <meta http-equiv="Permissions-Policy" content="ambient-light-sensor=(), battery=(), document-domain=(), layout-animations=(), legacy-image-formats=(), oversized-images=(), vr=(), wake-lock=()">
     <style>
     .main-title {
         font-size: 2.5rem;
