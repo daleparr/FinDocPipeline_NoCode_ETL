@@ -1,4 +1,8 @@
 import streamlit as st
+import os
+
+# Configure Streamlit to reduce console warnings
+os.environ['STREAMLIT_BROWSER_GATHER_USAGE_STATS'] = 'false'
 import pandas as pd
 import tempfile
 from datetime import datetime
@@ -960,10 +964,16 @@ def main():
     st.set_page_config(
         page_title="FinDocPipeline - No-Code ETL for Financial Slide Decks",
         page_icon="📊",
-        layout="wide"
+        layout="wide",
+        initial_sidebar_state="collapsed",
+        menu_items={
+            'Get Help': None,
+            'Report a bug': None,
+            'About': None
+        }
     )
     
-    # Custom CSS for UI customization
+    # Simplified CSS to avoid console warnings
     st.markdown("""
     <style>
     /* Main title styling */
@@ -984,16 +994,16 @@ def main():
     
     /* ETL Pipeline step styling */
     .etl-step {
-        background: linear-gradient(90deg, #f0f8ff 0%, #e6f3ff 100%);
+        background: #f0f8ff;
         padding: 0.5rem 1rem;
         border-left: 4px solid #1f77b4;
         margin: 0.5rem 0;
-        border-radius: 0 8px 8px 0;
+        border-radius: 8px;
     }
     
     /* Success message styling */
     .success-message {
-        background: linear-gradient(90deg, #f0fff0 0%, #e6ffe6 100%);
+        background: #f0fff0;
         padding: 1rem;
         border-radius: 8px;
         border-left: 4px solid #28a745;
@@ -1005,45 +1015,15 @@ def main():
         background: white;
         padding: 1rem;
         border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
         border-left: 4px solid #17a2b8;
-    }
-    
-    /* Custom button styling */
-    .stDownloadButton > button {
-        background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
-        color: white;
-        border: none;
-        border-radius: 6px;
-        padding: 0.5rem 1rem;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
-    
-    .stDownloadButton > button:hover {
-        background: linear-gradient(90deg, #218838 0%, #1ea085 100%);
-        transform: translateY(-1px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        margin: 0.5rem 0;
     }
     
     /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    
-    /* Custom footer */
-    .custom-footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #f8f9fa;
-        color: #6c757d;
-        text-align: center;
-        padding: 10px 0;
-        border-top: 1px solid #dee2e6;
-        font-size: 0.9rem;
-    }
     </style>
     """, unsafe_allow_html=True)
     
