@@ -961,17 +961,7 @@ def install_cv_libraries():
         return False
 
 def main():
-    st.set_page_config(
-        page_title="FinDocPipeline - No-Code ETL for Financial Slide Decks",
-        page_icon="📊",
-        layout="wide",
-        initial_sidebar_state="collapsed",
-        menu_items={
-            'Get Help': None,
-            'Report a bug': None,
-            'About': None
-        }
-    )
+    # Page config is handled by streamlit_app.py wrapper
     
     # Minimal CSS - no meta tags to avoid conflicts
     st.markdown("""
