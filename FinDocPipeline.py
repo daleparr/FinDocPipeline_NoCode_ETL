@@ -7,6 +7,29 @@ import re
 import subprocess
 import sys
 import json
+import numpy as np
+from PIL import Image
+import io
+import base64
+
+# Try to import optional computer vision libraries
+try:
+    import cv2
+    CV_AVAILABLE = True
+except ImportError:
+    CV_AVAILABLE = False
+
+try:
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
 
 # Import the comprehensive parser from previous implementation
 class ComprehensiveFinancialParser:
@@ -219,11 +242,15 @@ class NLPDataProcessor:
         if pd.isna(text):
             return ""
         
-        # Remove extra whitespace
-        text = re.sub(r'\s+', ' ', text)
+        # Remove extra whitespace but preserve line breaks initially
+        text = re.sub(r'[ \t]+', ' ', text)
         
-        # Remove special characters but keep basic punctuation
-        text = re.sub(r'[^\w\s\.\,\!\?\;\:\-\(\)\%\$]', ' ', text)
+        # Keep financial symbols and basic punctuation
+        # Allow: letters, numbers, spaces, basic punctuation, currency symbols, mathematical symbols
+        text = re.sub(r'[^\w\s\.\,\!\?\;\:\-\(\)\%\$£€¥\+\=\|\n\r]', ' ', text)
+        
+        # Convert line breaks to spaces
+        text = re.sub(r'[\n\r]+', ' ', text)
         
         # Remove multiple spaces
         text = re.sub(r'\s+', ' ', text)
@@ -245,6 +272,500 @@ class NLPDataProcessor:
         
         text_lower = text.lower()
         return any(term in text_lower for term in financial_terms)
+
+class NLPDatasetExporter:
+    """Create specialized NLP datasets for training and analysis"""
+    
+    def __init__(self):
+        self.financial_labels = [
+            'revenue', 'profit', 'loss', 'assets', 'liabilities', 'equity',
+            'cash_flow', 'earnings', 'income', 'expenses', 'margin', 'growth',
+            'investment', 'debt', 'return', 'dividend', 'share', 'stock'
+        ]
+    
+    def create_nlp_dataset(self, nlp_df, metrics_df=None):
+        """Create comprehensive NLP dataset with labels and features"""
+        nlp_dataset = []
+        
+        for idx, row in nlp_df.iterrows():
+            # Basic text features
+            text = row['cleaned_text']
+            
+            # Create dataset entry
+            entry = {
+                'id': f"doc_{row['page_number']}_{idx}",
+                'page_number': row['page_number'],
+                'content_type': row['content_type'],
+                'text': text,
+                'word_count': row['word_count'],
+                'char_count': row['char_count'],
+                'sentence_count': row['sentence_count'],
+                'has_financial_terms': row['has_financial_terms'],
+                'extraction_method': row['extraction_method']
+            }
+            
+            # Add text classification labels
+            entry.update(self._create_text_labels(text))
+            
+            # Add readability metrics
+            entry.update(self._calculate_readability_metrics(text))
+            
+            # Add financial entity indicators
+            entry.update(self._extract_financial_entities(text))
+            
+            # Add contextual features
+            entry.update(self._extract_contextual_features(text))
+            
+            nlp_dataset.append(entry)
+        
+        return pd.DataFrame(nlp_dataset)
+    
+    def _create_text_labels(self, text):
+        """Create classification labels for text"""
+        text_lower = text.lower()
+        
+        labels = {
+            'is_financial_statement': any(term in text_lower for term in
+                ['balance sheet', 'income statement', 'cash flow statement', 'statement of']),
+            'is_narrative_text': len(text.split('.')) > 3 and not ('|' in text or '\t' in text),
+            'is_tabular_data': '|' in text or '\t' in text or text.count('\n') > text.count('.'),
+            'contains_numbers': bool(re.search(r'\d+', text)),
+            'contains_percentages': '%' in text,
+            'contains_currency': bool(re.search(r'[\$£€¥]', text)),
+            'is_executive_summary': any(term in text_lower for term in
+                ['executive summary', 'overview', 'highlights', 'key points']),
+            'is_risk_disclosure': any(term in text_lower for term in
+                ['risk', 'uncertainty', 'forward-looking', 'may', 'could', 'might']),
+            'is_performance_metric': any(term in text_lower for term in
+                ['performance', 'results', 'achievement', 'target', 'goal'])
+        }
+        
+        return labels
+    
+    def _calculate_readability_metrics(self, text):
+        """Calculate basic readability metrics"""
+        if not text or len(text.strip()) == 0:
+            return {
+                'avg_word_length': 0,
+                'avg_sentence_length': 0,
+                'complexity_score': 0
+            }
+        
+        words = text.split()
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        avg_word_length = sum(len(word) for word in words) / len(words) if words else 0
+        avg_sentence_length = len(words) / len(sentences) if sentences else 0
+        
+        # Simple complexity score based on word and sentence length
+        complexity_score = (avg_word_length * 0.4) + (avg_sentence_length * 0.6)
+        
+        return {
+            'avg_word_length': round(avg_word_length, 2),
+            'avg_sentence_length': round(avg_sentence_length, 2),
+            'complexity_score': round(complexity_score, 2)
+        }
+    
+    def _extract_financial_entities(self, text):
+        """Extract and count financial entities"""
+        text_lower = text.lower()
+        
+        entity_counts = {}
+        for label in self.financial_labels:
+            count = len(re.findall(r'\b' + re.escape(label) + r'\b', text_lower))
+            entity_counts[f'{label}_count'] = count
+        
+        # Add total financial entity density
+        total_financial_terms = sum(entity_counts.values())
+        word_count = len(text.split())
+        financial_density = total_financial_terms / word_count if word_count > 0 else 0
+        
+        entity_counts['financial_entity_density'] = round(financial_density, 4)
+        
+        return entity_counts
+    
+    def _extract_contextual_features(self, text):
+        """Extract contextual features for NLP"""
+        text_lower = text.lower()
+        
+        features = {
+            'has_time_references': bool(re.search(r'\b(year|month|quarter|q[1-4]|\d{4})\b', text_lower)),
+            'has_comparison_terms': any(term in text_lower for term in
+                ['compared to', 'versus', 'vs', 'increase', 'decrease', 'higher', 'lower']),
+            'has_future_tense': any(term in text_lower for term in
+                ['will', 'expect', 'forecast', 'project', 'anticipate', 'plan']),
+            'has_past_tense': any(term in text_lower for term in
+                ['was', 'were', 'had', 'achieved', 'reported', 'recorded']),
+            'sentiment_indicators': self._basic_sentiment_analysis(text_lower),
+            'formality_score': self._calculate_formality_score(text)
+        }
+        
+        return features
+    
+    def _basic_sentiment_analysis(self, text_lower):
+        """Basic sentiment analysis for financial text"""
+        positive_terms = ['growth', 'increase', 'profit', 'success', 'strong', 'improved', 'gain']
+        negative_terms = ['loss', 'decrease', 'decline', 'weak', 'poor', 'risk', 'challenge']
+        
+        positive_count = sum(1 for term in positive_terms if term in text_lower)
+        negative_count = sum(1 for term in negative_terms if term in text_lower)
+        
+        if positive_count > negative_count:
+            return 'positive'
+        elif negative_count > positive_count:
+            return 'negative'
+        else:
+            return 'neutral'
+    
+    def _calculate_formality_score(self, text):
+        """Calculate formality score based on text characteristics"""
+        if not text:
+            return 0
+        
+        # Indicators of formal text
+        formal_indicators = 0
+        
+        # Long sentences
+        sentences = re.split(r'[.!?]+', text)
+        avg_sentence_length = sum(len(s.split()) for s in sentences) / len(sentences) if sentences else 0
+        if avg_sentence_length > 15:
+            formal_indicators += 1
+        
+        # Complex words (more than 6 characters)
+        words = text.split()
+        complex_words = sum(1 for word in words if len(word) > 6)
+        complex_ratio = complex_words / len(words) if words else 0
+        if complex_ratio > 0.3:
+            formal_indicators += 1
+        
+        # Passive voice indicators
+        if any(term in text.lower() for term in ['is', 'was', 'were', 'been', 'being']):
+            formal_indicators += 1
+        
+        return formal_indicators / 3  # Normalize to 0-1 scale
+    
+    def export_nlp_csv(self, nlp_dataset_df):
+        """Export NLP dataset as CSV"""
+        return nlp_dataset_df.to_csv(index=False)
+    
+    def export_nlp_json(self, nlp_dataset_df):
+        """Export NLP dataset as JSON with proper structure"""
+        # Create a structured JSON format suitable for NLP frameworks
+        nlp_json = {
+            "dataset_info": {
+                "name": "Financial Document NLP Dataset",
+                "version": "1.0",
+                "description": "Processed financial document text with NLP features and labels",
+                "created_at": datetime.now().isoformat(),
+                "total_samples": len(nlp_dataset_df)
+            },
+            "features": {
+                "text_features": ["text", "word_count", "char_count", "sentence_count"],
+                "classification_labels": [
+                    "is_financial_statement", "is_narrative_text", "is_tabular_data",
+                    "is_executive_summary", "is_risk_disclosure", "is_performance_metric"
+                ],
+                "readability_metrics": ["avg_word_length", "avg_sentence_length", "complexity_score"],
+                "entity_counts": [f"{label}_count" for label in self.financial_labels],
+                "contextual_features": [
+                    "has_time_references", "has_comparison_terms", "has_future_tense",
+                    "has_past_tense", "sentiment_indicators", "formality_score"
+                ]
+            },
+            "data": nlp_dataset_df.to_dict(orient="records")
+        }
+        
+        return json.dumps(nlp_json, indent=2, ensure_ascii=False)
+
+class EnhancedVisualParser:
+    """Enhanced parser with computer vision and OCR capabilities for charts, graphs, and images"""
+    
+    def __init__(self):
+        self.ocr_available = False
+        self.cv_available = False
+        self._check_cv_capabilities()
+        
+        # Enhanced financial dictionaries for cleaning and sorting
+        self.financial_terms_dict = {
+            'revenue_terms': ['revenue', 'sales', 'income', 'turnover', 'receipts'],
+            'profit_terms': ['profit', 'earnings', 'net income', 'ebitda', 'operating income'],
+            'asset_terms': ['assets', 'property', 'equipment', 'inventory', 'cash', 'investments'],
+            'liability_terms': ['liabilities', 'debt', 'payables', 'obligations', 'borrowings'],
+            'equity_terms': ['equity', 'shareholders equity', 'retained earnings', 'capital'],
+            'ratio_terms': ['ratio', 'margin', 'return', 'yield', 'percentage', 'rate'],
+            'trend_terms': ['increase', 'decrease', 'growth', 'decline', 'improvement', 'deterioration'],
+            'time_terms': ['year', 'quarter', 'month', 'annual', 'quarterly', 'monthly', 'ytd', 'q1', 'q2', 'q3', 'q4']
+        }
+        
+        # Chart type indicators
+        self.chart_indicators = {
+            'bar_chart': ['bar chart', 'bar graph', 'column chart', 'histogram'],
+            'line_chart': ['line chart', 'line graph', 'trend line', 'time series'],
+            'pie_chart': ['pie chart', 'pie graph', 'donut chart', 'circular chart'],
+            'scatter_plot': ['scatter plot', 'scatter chart', 'correlation plot'],
+            'table': ['table', 'matrix', 'grid', 'tabular data']
+        }
+    
+    def _check_cv_capabilities(self):
+        """Check available computer vision and OCR libraries"""
+        self.ocr_available = OCR_AVAILABLE
+        self.cv_available = CV_AVAILABLE
+        
+        if self.ocr_available:
+            st.info("✅ OCR capabilities available (Tesseract)")
+        else:
+            st.warning("⚠️ OCR not available - install pytesseract for enhanced text extraction")
+        
+        if self.cv_available:
+            st.info("✅ Computer Vision capabilities available (OpenCV)")
+        else:
+            st.warning("⚠️ Computer Vision not available - install opencv-python for image analysis")
+    
+    def extract_visual_data(self, pdf_path):
+        """Extract visual elements including charts, graphs, and images with OCR"""
+        visual_data = []
+        
+        if not PYMUPDF_AVAILABLE:
+            st.warning("⚠️ PyMuPDF not available - visual extraction limited")
+            return visual_data
+        
+        try:
+            import fitz  # PyMuPDF for image extraction
+            doc = fitz.open(pdf_path)
+            
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                page_visual_data = {
+                    'page': page_num + 1,
+                    'images': [],
+                    'charts_detected': [],
+                    'ocr_text': '',
+                    'visual_metrics': {}
+                }
+                
+                # Extract images from page
+                image_list = page.get_images()
+                
+                for img_index, img in enumerate(image_list):
+                    try:
+                        # Extract image data
+                        xref = img[0]
+                        pix = fitz.Pixmap(doc, xref)
+                        
+                        if pix.n - pix.alpha < 4:  # GRAY or RGB
+                            img_data = pix.tobytes("png")
+                            img_pil = Image.open(io.BytesIO(img_data))
+                            
+                            # Analyze image
+                            image_analysis = self._analyze_image(img_pil, page_num + 1, img_index)
+                            page_visual_data['images'].append(image_analysis)
+                            
+                            # Perform OCR if available
+                            if self.ocr_available:
+                                ocr_text = self._extract_text_from_image(img_pil)
+                                page_visual_data['ocr_text'] += f" {ocr_text}"
+                        
+                        pix = None
+                    except Exception as e:
+                        st.warning(f"Error processing image {img_index} on page {page_num + 1}: {str(e)}")
+                
+                # Detect chart types and extract data
+                page_visual_data['charts_detected'] = self._detect_chart_types(page_visual_data['ocr_text'])
+                page_visual_data['visual_metrics'] = self._extract_visual_metrics(page_visual_data['ocr_text'])
+                
+                visual_data.append(page_visual_data)
+            
+            doc.close()
+            
+        except Exception as e:
+            st.error(f"Error in visual data extraction: {str(e)}")
+        
+        return visual_data
+    
+    def _analyze_image(self, img_pil, page_num, img_index):
+        """Analyze individual image for chart/graph characteristics"""
+        analysis = {
+            'image_id': f"page_{page_num}_img_{img_index}",
+            'size': img_pil.size,
+            'mode': img_pil.mode,
+            'is_chart': False,
+            'chart_type': None,
+            'contains_text': False,
+            'color_analysis': {}
+        }
+        
+        try:
+            # Convert to numpy array for analysis
+            img_array = np.array(img_pil)
+            
+            # Basic image analysis
+            analysis['color_analysis'] = {
+                'mean_brightness': np.mean(img_array),
+                'has_multiple_colors': len(np.unique(img_array.reshape(-1, img_array.shape[-1]), axis=0)) > 10,
+                'aspect_ratio': img_pil.size[0] / img_pil.size[1]
+            }
+            
+            # Computer vision analysis if available
+            if self.cv_available:
+                analysis.update(self._cv_chart_detection(img_array))
+            
+        except Exception as e:
+            st.warning(f"Error in image analysis: {str(e)}")
+        
+        return analysis
+    
+    def _cv_chart_detection(self, img_array):
+        """Use computer vision to detect chart elements"""
+        if not CV_AVAILABLE:
+            return {'cv_available': False}
+        
+        try:
+            import cv2
+            
+            # Convert to grayscale
+            if len(img_array.shape) == 3:
+                gray = cv2.cvtColor(img_array, cv2.COLOR_RGB2GRAY)
+            else:
+                gray = img_array
+            
+            # Detect lines (potential chart axes)
+            edges = cv2.Canny(gray, 50, 150, apertureSize=3)
+            lines = cv2.HoughLines(edges, 1, np.pi/180, threshold=100)
+            
+            # Detect contours (potential chart elements)
+            contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            return {
+                'lines_detected': len(lines) if lines is not None else 0,
+                'contours_detected': len(contours),
+                'likely_chart': (len(lines) if lines is not None else 0) > 2 and len(contours) > 5,
+                'chart_complexity': len(contours) / 10 if contours else 0
+            }
+            
+        except Exception as e:
+            return {'cv_error': str(e)}
+    
+    def _extract_text_from_image(self, img_pil):
+        """Extract text from image using OCR"""
+        if not OCR_AVAILABLE:
+            return "OCR not available"
+        
+        try:
+            import pytesseract
+            
+            # Configure OCR for better financial document recognition
+            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,()%-$£€¥'
+            
+            text = pytesseract.image_to_string(img_pil, config=custom_config)
+            return text.strip()
+            
+        except Exception as e:
+            return f"OCR Error: {str(e)}"
+    
+    def _detect_chart_types(self, text):
+        """Detect chart types from extracted text"""
+        detected_charts = []
+        text_lower = text.lower()
+        
+        for chart_type, indicators in self.chart_indicators.items():
+            for indicator in indicators:
+                if indicator in text_lower:
+                    detected_charts.append({
+                        'type': chart_type,
+                        'indicator': indicator,
+                        'confidence': 0.8 if 'chart' in indicator else 0.6
+                    })
+        
+        return detected_charts
+    
+    def _extract_visual_metrics(self, ocr_text):
+        """Extract financial metrics from OCR text using enhanced dictionaries"""
+        metrics = {}
+        
+        # Clean and normalize OCR text
+        cleaned_text = self._clean_ocr_text(ocr_text)
+        
+        # Extract metrics using financial dictionaries
+        for category, terms in self.financial_terms_dict.items():
+            category_metrics = []
+            for term in terms:
+                # Look for numerical values near financial terms
+                pattern = rf'{re.escape(term)}\s*[:\-]?\s*([\d,\.]+)\s*([%$£€¥]?)\s*(million|billion|m|b|k)?'
+                matches = re.finditer(pattern, cleaned_text, re.IGNORECASE)
+                
+                for match in matches:
+                    category_metrics.append({
+                        'term': term,
+                        'value': match.group(1),
+                        'currency': match.group(2),
+                        'unit': match.group(3),
+                        'context': cleaned_text[max(0, match.start()-30):match.end()+30]
+                    })
+            
+            if category_metrics:
+                metrics[category] = category_metrics
+        
+        return metrics
+    
+    def _clean_ocr_text(self, text):
+        """Clean and normalize OCR text for better extraction"""
+        if not text:
+            return ""
+        
+        # Fix common OCR errors
+        text = re.sub(r'[|l1]', 'I', text)  # Fix common character misreads
+        text = re.sub(r'[O0]', '0', text)   # Normalize zeros
+        text = re.sub(r'\s+', ' ', text)    # Normalize whitespace
+        text = re.sub(r'[^\w\s\.\,\!\?\;\:\-\(\)\%\$£€¥]', ' ', text)  # Remove noise
+        
+        return text.strip()
+    
+    def create_enhanced_dataset(self, visual_data, existing_nlp_df):
+        """Create enhanced dataset combining visual and text data"""
+        enhanced_rows = []
+        
+        for page_data in visual_data:
+            page_num = page_data['page']
+            
+            # Add visual content as separate entries
+            if page_data['ocr_text']:
+                enhanced_rows.append({
+                    'page_number': page_num,
+                    'content_type': 'visual_ocr',
+                    'raw_text': page_data['ocr_text'],
+                    'word_count': len(page_data['ocr_text'].split()),
+                    'char_count': len(page_data['ocr_text']),
+                    'extraction_method': 'ocr_visual',
+                    'images_count': len(page_data['images']),
+                    'charts_detected': len(page_data['charts_detected']),
+                    'visual_metrics_count': len(page_data['visual_metrics'])
+                })
+            
+            # Add chart-specific entries
+            for chart in page_data['charts_detected']:
+                enhanced_rows.append({
+                    'page_number': page_num,
+                    'content_type': f"chart_{chart['type']}",
+                    'raw_text': f"Chart detected: {chart['type']} - {chart['indicator']}",
+                    'word_count': 5,
+                    'char_count': 50,
+                    'extraction_method': 'computer_vision',
+                    'chart_confidence': chart['confidence'],
+                    'chart_type': chart['type']
+                })
+        
+        # Combine with existing NLP data
+        if enhanced_rows:
+            enhanced_df = pd.concat([
+                existing_nlp_df,
+                pd.DataFrame(enhanced_rows)
+            ], ignore_index=True)
+        else:
+            # If no visual data, return the original NLP data
+            enhanced_df = existing_nlp_df.copy()
+        
+        return enhanced_df
 
 class DeduplicatedMetricsExtractor:
     """Extract financial metrics with deduplication logic"""
@@ -403,37 +924,163 @@ def install_pdfplumber():
         st.error(f"Failed to install pdfplumber: {str(e)}")
         return False
 
+def install_cv_libraries():
+    """Install computer vision and OCR libraries"""
+    try:
+        st.info("Installing computer vision libraries...")
+        
+        # Install OpenCV
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "opencv-python"])
+        st.success("✅ Installed OpenCV")
+        
+        # Install Tesseract OCR
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pytesseract"])
+        st.success("✅ Installed pytesseract")
+        
+        # Install additional image processing libraries
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "Pillow", "numpy"])
+        st.success("✅ Installed image processing libraries")
+        
+        st.warning("⚠️ Note: You may need to install Tesseract OCR system binary separately:")
+        st.code("# Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki\n# Ubuntu: sudo apt install tesseract-ocr\n# macOS: brew install tesseract")
+        
+        return True
+    except Exception as e:
+        st.error(f"Failed to install CV libraries: {str(e)}")
+        return False
+
 def main():
     st.set_page_config(
-        page_title="BOE ETL - Final Balanced Financial Analysis",
-        page_icon="🏦",
+        page_title="FinDocPipeline - No-Code ETL for Financial Slide Decks",
+        page_icon="📊",
         layout="wide"
     )
     
-    st.title("🏦 BOE ETL - Final Balanced Financial Analysis")
-    st.markdown("**Three-Tier Data Analysis: Raw Data + NLP-Ready Data + Structured Metrics with Deduplication**")
+    # Custom CSS for UI customization
+    st.markdown("""
+    <style>
+    /* Main title styling */
+    .main-title {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: #1f77b4;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Subtitle styling */
+    .subtitle {
+        font-size: 1.2rem;
+        color: #666;
+        margin-bottom: 2rem;
+        font-style: italic;
+    }
+    
+    /* ETL Pipeline step styling */
+    .etl-step {
+        background: linear-gradient(90deg, #f0f8ff 0%, #e6f3ff 100%);
+        padding: 0.5rem 1rem;
+        border-left: 4px solid #1f77b4;
+        margin: 0.5rem 0;
+        border-radius: 0 8px 8px 0;
+    }
+    
+    /* Success message styling */
+    .success-message {
+        background: linear-gradient(90deg, #f0fff0 0%, #e6ffe6 100%);
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #28a745;
+        margin: 1rem 0;
+    }
+    
+    /* Metric cards styling */
+    .metric-card {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        border-left: 4px solid #17a2b8;
+    }
+    
+    /* Custom button styling */
+    .stDownloadButton > button {
+        background: linear-gradient(90deg, #28a745 0%, #20c997 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stDownloadButton > button:hover {
+        background: linear-gradient(90deg, #218838 0%, #1ea085 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Custom footer */
+    .custom-footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #f8f9fa;
+        color: #6c757d;
+        text-align: center;
+        padding: 10px 0;
+        border-top: 1px solid #dee2e6;
+        font-size: 0.9rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Main title with custom styling
+    st.markdown('<h1 class="main-title">📊 FinDocPipeline: Your No-Code ETL Solution for Financial Slide Decks</h1>', unsafe_allow_html=True)
+    st.markdown('<p class="subtitle">Transform messy, unstructured earnings-deck text into clean, analysis-ready data—without requiring any Python</p>', unsafe_allow_html=True)
     
     # Initialize components
     parser = ComprehensiveFinancialParser()
     nlp_processor = NLPDataProcessor()
     metrics_extractor = DeduplicatedMetricsExtractor()
+    nlp_exporter = NLPDatasetExporter()
+    visual_parser = EnhancedVisualParser()
     
     # Check capabilities
     if not parser.pdf_methods:
         st.warning("⚠️ Processing requires pdfplumber or PyMuPDF!")
         if st.button("🔧 Install pdfplumber"):
             if install_pdfplumber():
-                st.experimental_rerun()
+                st.rerun()
         return
     else:
         st.success(f"✅ Processing available with: {', '.join(parser.pdf_methods)}")
     
+    # Check computer vision capabilities
+    if not visual_parser.ocr_available or not visual_parser.cv_available:
+        st.info("🔧 Enhanced visual analysis requires additional libraries")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📦 Install Computer Vision Libraries"):
+                if install_cv_libraries():
+                    st.rerun()
+        with col2:
+            st.write("**Enhanced features with CV libraries:**")
+            st.write("• OCR text extraction from charts/images")
+            st.write("• Chart type detection and analysis")
+            st.write("• Visual trend pattern recognition")
+    
     # File upload
-    st.header("📁 Upload Financial Document")
+    st.header("📁 Upload Financial Slide Deck")
     uploaded_file = st.file_uploader(
         "Choose a PDF file",
         type=['pdf'],
-        help="Upload financial presentations, earnings reports, or regulatory filings"
+        help="Upload earnings presentations, financial slide decks, or investor presentations"
     )
     
     if uploaded_file is not None:
@@ -444,78 +1091,74 @@ def main():
                 tmp_path = tmp_file.name
             
             try:
-                with st.spinner("🔄 Extracting comprehensive data..."):
+                with st.spinner("📊 EXTRACT: Reading slide deck content..."):
                     pages_data = parser.extract_comprehensive_data(tmp_path)
                 
-                with st.spinner("🔄 Creating raw structured data..."):
+                with st.spinner("🔄 TRANSFORM: Creating raw structured data..."):
                     raw_df = nlp_processor.create_raw_csv(pages_data)
                 
-                with st.spinner("🤖 Cleaning and preparing for NLP..."):
+                with st.spinner("🧹 TRANSFORM: Cleaning text and normalizing tokens..."):
                     nlp_df, full_df = nlp_processor.clean_for_nlp(raw_df)
                 
-                with st.spinner("🔍 Extracting deduplicated metrics..."):
+                with st.spinner("🎯 TRANSFORM: Applying METRIC_PATTERNS regex library..."):
                     metrics_long_df, debug_df = metrics_extractor.extract_metrics_enhanced(nlp_df)
                     metrics_wide_df = metrics_extractor.create_wide_metrics(metrics_long_df)
                 
-                st.success(f"✅ Balanced processing finished: {uploaded_file.name} ({len(pages_data)} pages)")
+                with st.spinner("👁️ TRANSFORM: Processing visual content with OCR..."):
+                    visual_data = visual_parser.extract_visual_data(tmp_path)
+                    enhanced_nlp_df = visual_parser.create_enhanced_dataset(visual_data, nlp_df)
+                
+                with st.spinner("📋 LOAD: Generating clean datasets for analysis..."):
+                    nlp_dataset_df = nlp_exporter.create_nlp_dataset(enhanced_nlp_df, metrics_long_df)
+                
+                st.success(f"✅ ETL Pipeline Complete: {uploaded_file.name} ({len(pages_data)} slides processed)")
                 
                 # Display results with balanced layout
-                st.header("📊 Three-Tier Data Analysis")
+                st.header("📊 Your Clean, Analysis-Ready Datasets")
                 
                 # Summary metrics
-                col1, col2, col3, col4 = st.columns(4)
+                col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
                 with col1:
-                    st.metric("Pages Processed", len(pages_data))
+                    st.metric("Slides Processed", len(pages_data))
                 with col2:
-                    st.metric("NLP-Ready Rows", len(nlp_df))
+                    total_words = nlp_df['word_count'].sum() if len(nlp_df) > 0 else 0
+                    st.metric("Total Words", f"{total_words:,}")
                 with col3:
-                    st.metric("Extracted Metrics", len(metrics_long_df))
+                    st.metric("Clean Text Rows", len(nlp_df))
                 with col4:
-                    unique_metrics = metrics_long_df['metric_name'].nunique() if len(metrics_long_df) > 0 else 0
-                    st.metric("Unique Metric Types", unique_metrics)
+                    st.metric("Enhanced Rows", len(enhanced_nlp_df))
+                with col5:
+                    st.metric("NLP Dataset Rows", len(nlp_dataset_df))
+                with col6:
+                    st.metric("Extracted Metrics", len(metrics_long_df))
+                with col7:
+                    total_images = sum(len(page['images']) for page in visual_data)
+                    total_tables = sum(len(page_data.get('tables', [])) for page_data in pages_data)
+                    st.metric("Tables/Charts", f"{total_tables}/{total_images}")
                 
-                # Deduplication Summary
-                st.subheader("🔍 Deduplication Summary")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.write("**Extraction Summary:**")
-                    if len(debug_df) > 0:
-                        total_matches = debug_df['matches_found'].sum()
-                        pages_with_matches = (debug_df['matches_found'] > 0).sum()
-                        avg_text_length = debug_df['text_length'].mean()
-                        
-                        st.write(f"- Total matches found: {total_matches}")
-                        st.write(f"- Pages with matches: {pages_with_matches}/{len(debug_df)}")
-                        st.write(f"- Average text length: {avg_text_length:.0f} characters")
-                    else:
-                        st.info("No debug information available")
-                
-                with col2:
-                    st.write("**Deduplication Results:**")
-                    if len(metrics_long_df) > 0:
-                        dedup_stats = metrics_long_df.groupby('metric_name').size()
-                        st.write(f"- Unique metrics after deduplication: {len(metrics_long_df)}")
-                        st.write(f"- Metric types found: {unique_metrics}")
-                        
-                        if len(dedup_stats) > 0:
-                            st.write("**Metrics by type:**")
-                            for metric, count in dedup_stats.head(5).items():
-                                st.write(f"  • {metric}: {count}")
-                    else:
-                        st.info("No metrics extracted")
-                
-                # Three-column balanced layout
+                # Three-column balanced layout with export buttons
                 st.subheader("📄 Complete Data Preview")
                 
                 col1, col2, col3 = st.columns(3)
+                
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                base_filename = uploaded_file.name.replace('.pdf', '')
                 
                 with col1:
                     st.write("**🔤 Raw Data**")
                     st.write("*Original extracted content*")
                     if len(raw_df) > 0:
                         st.dataframe(raw_df.head(10), use_container_width=True, height=400)
+                        
+                        # Export button for Raw Data
+                        raw_csv = raw_df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Raw Data CSV",
+                            data=raw_csv,
+                            file_name=f"raw_data_{base_filename}_{timestamp}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
                     else:
                         st.info("No raw data available")
                 
@@ -524,6 +1167,16 @@ def main():
                     st.write("*Cleaned and normalized*")
                     if len(nlp_df) > 0:
                         st.dataframe(nlp_df.head(10), use_container_width=True, height=400)
+                        
+                        # Export button for NLP Data
+                        nlp_csv = nlp_df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download NLP-Ready CSV",
+                            data=nlp_csv,
+                            file_name=f"nlp_ready_{base_filename}_{timestamp}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
                     else:
                         st.info("No NLP data available")
                 
@@ -532,13 +1185,33 @@ def main():
                     st.write("*Extracted financial metrics*")
                     if len(metrics_long_df) > 0:
                         st.dataframe(metrics_long_df.head(10), use_container_width=True, height=400)
+                        
+                        # Export buttons for Metrics
+                        metrics_csv = metrics_long_df.to_csv(index=False)
+                        st.download_button(
+                            label="📥 Download Metrics CSV",
+                            data=metrics_csv,
+                            file_name=f"metrics_long_{base_filename}_{timestamp}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                        
+                        if len(metrics_wide_df) > 0:
+                            wide_csv = metrics_wide_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Metrics (Wide) CSV",
+                                data=wide_csv,
+                                file_name=f"metrics_wide_{base_filename}_{timestamp}.csv",
+                                mime="text/csv",
+                                use_container_width=True
+                            )
                     else:
                         st.info("No metrics extracted")
                 
                 # Complete Data Preview with all tabs as shown in screenshot
                 st.subheader("📄 Complete Data Preview")
                 
-                tab1, tab2, tab3, tab4, tab5 = st.tabs(["Raw Data", "NLP-Ready", "Metrics (Long)", "Metrics (Wide)", "Debug Info"])
+                tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["Raw Data", "NLP-Ready", "Enhanced NLP", "NLP Dataset", "Visual Analysis", "Metrics (Long)", "Metrics (Wide)", "Debug Info"])
                 
                 with tab1:
                     st.write("**Raw extracted data with all original content:**")
@@ -555,20 +1228,104 @@ def main():
                         st.info("No NLP data available")
                 
                 with tab3:
+                    st.write("**Enhanced NLP data with visual content integrated:**")
+                    if len(enhanced_nlp_df) > 0:
+                        st.dataframe(enhanced_nlp_df, use_container_width=True)
+                        
+                        # Show content type distribution
+                        st.write("**Content Type Distribution:**")
+                        content_dist = enhanced_nlp_df['content_type'].value_counts()
+                        st.bar_chart(content_dist)
+                    else:
+                        st.info("No enhanced NLP data available")
+                
+                with tab4:
+                    st.write("**Enhanced NLP dataset with features, labels, and analysis:**")
+                    if len(nlp_dataset_df) > 0:
+                        st.dataframe(nlp_dataset_df, use_container_width=True)
+                        
+                        # Show feature summary
+                        st.write("**Dataset Features:**")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.write("**Text Classification Labels:**")
+                            classification_cols = [col for col in nlp_dataset_df.columns if col.startswith('is_')]
+                            for col in classification_cols[:5]:  # Show first 5
+                                true_count = nlp_dataset_df[col].sum()
+                                st.write(f"• {col.replace('is_', '').replace('_', ' ').title()}: {true_count}")
+                        
+                        with col2:
+                            st.write("**Readability Metrics:**")
+                            if 'avg_word_length' in nlp_dataset_df.columns:
+                                avg_word_len = nlp_dataset_df['avg_word_length'].mean()
+                                st.write(f"• Avg Word Length: {avg_word_len:.1f}")
+                            if 'complexity_score' in nlp_dataset_df.columns:
+                                avg_complexity = nlp_dataset_df['complexity_score'].mean()
+                                st.write(f"• Avg Complexity: {avg_complexity:.1f}")
+                            if 'financial_entity_density' in nlp_dataset_df.columns:
+                                avg_density = nlp_dataset_df['financial_entity_density'].mean()
+                                st.write(f"• Financial Density: {avg_density:.3f}")
+                        
+                        with col3:
+                            st.write("**Content Distribution:**")
+                            if 'sentiment_indicators' in nlp_dataset_df.columns:
+                                sentiment_counts = nlp_dataset_df['sentiment_indicators'].value_counts()
+                                for sentiment, count in sentiment_counts.items():
+                                    st.write(f"• {sentiment.title()}: {count}")
+                    else:
+                        st.info("No NLP dataset available")
+                
+                with tab5:
+                    st.write("**Visual Analysis: Charts, Graphs, and OCR Results:**")
+                    if visual_data:
+                        # Visual summary
+                        total_images = sum(len(page['images']) for page in visual_data)
+                        total_charts = sum(len(page['charts_detected']) for page in visual_data)
+                        total_ocr_text = sum(len(page['ocr_text']) for page in visual_data)
+                        
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Total Images", total_images)
+                        with col2:
+                            st.metric("Charts Detected", total_charts)
+                        with col3:
+                            st.metric("OCR Characters", total_ocr_text)
+                        
+                        # Page-by-page visual analysis
+                        for page_data in visual_data:
+                            if page_data['images'] or page_data['charts_detected'] or page_data['ocr_text']:
+                                st.write(f"**Page {page_data['page']} Visual Content:**")
+                                
+                                if page_data['charts_detected']:
+                                    st.write("**Charts Detected:**")
+                                    for chart in page_data['charts_detected']:
+                                        st.write(f"• {chart['type'].title()}: {chart['indicator']} (confidence: {chart['confidence']:.1f})")
+                                
+                                if page_data['ocr_text']:
+                                    with st.expander(f"OCR Text from Page {page_data['page']}"):
+                                        st.text(page_data['ocr_text'][:500] + "..." if len(page_data['ocr_text']) > 500 else page_data['ocr_text'])
+                                
+                                if page_data['visual_metrics']:
+                                    with st.expander(f"Visual Metrics from Page {page_data['page']}"):
+                                        st.json(page_data['visual_metrics'])
+                    else:
+                        st.info("No visual data extracted")
+                
+                with tab6:
                     st.write("**Deduplicated metrics in long form (one row per unique metric):**")
                     if len(metrics_long_df) > 0:
                         st.dataframe(metrics_long_df, use_container_width=True)
                     else:
                         st.info("No metrics extracted from this document")
                 
-                with tab4:
+                with tab7:
                     st.write("**Extracted metrics in wide form (one row per page):**")
                     if len(metrics_wide_df) > 0:
                         st.dataframe(metrics_wide_df, use_container_width=True)
                     else:
                         st.info("No wide-form metrics available")
                 
-                with tab5:
+                with tab8:
                     st.write("**Extraction debug information:**")
                     if len(debug_df) > 0:
                         st.dataframe(debug_df, use_container_width=True)
@@ -622,6 +1379,48 @@ def main():
                                 data=nlp_csv,
                                 file_name=f"nlp_ready_{base_filename}_{timestamp}.csv",
                                 mime="text/csv"
+                            )
+                        
+                        # Enhanced NLP data download
+                        if len(enhanced_nlp_df) > 0:
+                            enhanced_csv = enhanced_nlp_df.to_csv(index=False)
+                            st.download_button(
+                                label="👁️ Download Enhanced NLP CSV",
+                                data=enhanced_csv,
+                                file_name=f"enhanced_nlp_{base_filename}_{timestamp}.csv",
+                                mime="text/csv",
+                                help="Includes visual content and OCR data"
+                            )
+                        
+                        # Visual data export
+                        if visual_data:
+                            visual_json = json.dumps(visual_data, indent=2, ensure_ascii=False)
+                            st.download_button(
+                                label="👁️ Download Visual Analysis JSON",
+                                data=visual_json,
+                                file_name=f"visual_analysis_{base_filename}_{timestamp}.json",
+                                mime="application/json",
+                                help="Complete visual analysis including OCR and chart detection"
+                            )
+                        
+                        # NLP Dataset downloads
+                        if len(nlp_dataset_df) > 0:
+                            nlp_dataset_csv = nlp_exporter.export_nlp_csv(nlp_dataset_df)
+                            st.download_button(
+                                label="🤖 Download NLP Dataset CSV",
+                                data=nlp_dataset_csv,
+                                file_name=f"nlp_dataset_{base_filename}_{timestamp}.csv",
+                                mime="text/csv",
+                                help="Enhanced NLP dataset with features, labels, and analysis"
+                            )
+                            
+                            nlp_dataset_json = nlp_exporter.export_nlp_json(nlp_dataset_df)
+                            st.download_button(
+                                label="🤖 Download NLP Dataset JSON",
+                                data=nlp_dataset_json,
+                                file_name=f"nlp_dataset_{base_filename}_{timestamp}.json",
+                                mime="application/json",
+                                help="Structured NLP dataset with metadata for ML frameworks"
                             )
                     
                     with col2:
@@ -683,9 +1482,49 @@ def main():
         except Exception as e:
             st.error(f"Error in balanced processing: {str(e)}")
     
+    # Deduplication Summary (moved to bottom)
+    if uploaded_file is not None:
+        try:
+            # Only show if we have processed data
+            if 'metrics_long_df' in locals() and 'debug_df' in locals():
+                st.markdown("---")
+                st.subheader("🔍 Deduplication Summary")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.write("**Extraction Summary:**")
+                    if len(debug_df) > 0:
+                        total_matches = debug_df['matches_found'].sum()
+                        pages_with_matches = (debug_df['matches_found'] > 0).sum()
+                        avg_text_length = debug_df['text_length'].mean()
+                        
+                        st.write(f"- Total matches found: {total_matches}")
+                        st.write(f"- Pages with matches: {pages_with_matches}/{len(debug_df)}")
+                        st.write(f"- Average text length: {avg_text_length:.0f} characters")
+                    else:
+                        st.info("No debug information available")
+                
+                with col2:
+                    st.write("**Deduplication Results:**")
+                    if len(metrics_long_df) > 0:
+                        dedup_stats = metrics_long_df.groupby('metric_name').size()
+                        unique_metrics = metrics_long_df['metric_name'].nunique()
+                        st.write(f"- Unique metrics after deduplication: {len(metrics_long_df)}")
+                        st.write(f"- Metric types found: {unique_metrics}")
+                        
+                        if len(dedup_stats) > 0:
+                            st.write("**Metrics by type:**")
+                            for metric, count in dedup_stats.head(5).items():
+                                st.write(f"  • {metric}: {count}")
+                    else:
+                        st.info("No metrics extracted")
+        except:
+            pass
+    
     # Footer
     st.markdown("---")
-    st.markdown("**FinDocPipeline** - Standalone Financial Document Analysis Tool")
+    st.markdown("**FinDocPipeline** - Your No-Code ETL Solution for Financial Slide Decks")
 
 if __name__ == "__main__":
     main()

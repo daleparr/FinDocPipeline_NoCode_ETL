@@ -22,11 +22,16 @@ wheels/
 MANIFEST
 
 # Virtual environments
-venv/
+.env
+.venv
 env/
+venv/
 ENV/
-.venv/
-.env/
+env.bak/
+venv.bak/
+
+# Streamlit
+.streamlit/
 
 # IDE
 .vscode/
@@ -35,23 +40,35 @@ ENV/
 *.swo
 *~
 
-# ETL specific
-pure_etl_uploads/
-pure_etl_outputs/
-pure_etl_history.json
-*.csv
-*.xlsx
-*.pdf
-*.txt
-
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
 
 # Logs
 *.log
 logs/
 
-# Temporary files
-tmp/
-temp/
+# Test files (keep the main test files but ignore temporary test data)
+test_financial_document.txt
+test_pipeline_debug.py
+
+# PDF uploads (don't commit user uploads)
+uploads/
+*.pdf
+
+# Output files
+output/
+exports/
+*.csv
+*.json
