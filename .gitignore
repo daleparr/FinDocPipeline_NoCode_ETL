@@ -30,8 +30,9 @@ ENV/
 env.bak/
 venv.bak/
 
-# Streamlit
-.streamlit/
+# Streamlit (allow config.toml but ignore cache)
+.streamlit/secrets.toml
+.streamlit/credentials.toml
 
 # IDE
 .vscode/
