@@ -249,6 +249,10 @@ class NLPDataProcessor:
         if pd.isna(text):
             return ""
         
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
+        
         # Remove extra whitespace but preserve line breaks initially
         text = re.sub(r'[ \t]+', ' ', text)
         
@@ -355,6 +359,8 @@ class NLPDatasetExporter:
     
     def _calculate_readability_metrics(self, text):
         """Calculate basic readability metrics"""
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         if not text or len(text.strip()) == 0:
             return {
                 'avg_word_length': 0,
@@ -677,6 +683,8 @@ class EnhancedVisualParser:
             custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.,()%-$£€¥'
             
             text = pytesseract.image_to_string(img_pil, config=custom_config)
+            if not isinstance(text, str):
+                text = str(text) if text is not None else ""
             return text.strip()
             
         except Exception as e:
@@ -733,6 +741,10 @@ class EnhancedVisualParser:
         """Clean and normalize OCR text for better extraction"""
         if not text:
             return ""
+        
+        # Ensure text is a string
+        if not isinstance(text, str):
+            text = str(text) if text is not None else ""
         
         # Fix common OCR errors
         text = re.sub(r'[|l1]', 'I', text)  # Fix common character misreads
