@@ -973,54 +973,22 @@ def main():
         }
     )
     
-    # Simplified CSS to avoid console warnings
+    # Add meta tag to suppress browser feature warnings
     st.markdown("""
+    <meta http-equiv="Permissions-Policy" content="ambient-light-sensor=(), battery=(), document-domain=(), layout-animations=(), legacy-image-formats=(), oversized-images=(), vr=(), wake-lock=()">
     <style>
-    /* Main title styling */
     .main-title {
         font-size: 2.5rem;
         font-weight: 700;
         color: #1f77b4;
         margin-bottom: 0.5rem;
     }
-    
-    /* Subtitle styling */
     .subtitle {
         font-size: 1.2rem;
         color: #666;
         margin-bottom: 2rem;
         font-style: italic;
     }
-    
-    /* ETL Pipeline step styling */
-    .etl-step {
-        background: #f0f8ff;
-        padding: 0.5rem 1rem;
-        border-left: 4px solid #1f77b4;
-        margin: 0.5rem 0;
-        border-radius: 8px;
-    }
-    
-    /* Success message styling */
-    .success-message {
-        background: #f0fff0;
-        padding: 1rem;
-        border-radius: 8px;
-        border-left: 4px solid #28a745;
-        margin: 1rem 0;
-    }
-    
-    /* Metric cards styling */
-    .metric-card {
-        background: white;
-        padding: 1rem;
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
-        border-left: 4px solid #17a2b8;
-        margin: 0.5rem 0;
-    }
-    
-    /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
