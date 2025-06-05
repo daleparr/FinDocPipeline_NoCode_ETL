@@ -405,8 +405,8 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    st.title("🎙️ FinDocPipeline - Enhanced Document Processing")
-    st.markdown("**No-Code ETL Solution for Financial Documents with Transcript Recognition**")
+    st.title("🎙️ FinDocPipeline - Transcript Recognition")
+    st.markdown("**Enhanced document processing with transcript recognition capabilities**")
     
     # Document Type Selection
     st.header("📋 Document Type & Upload")

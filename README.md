@@ -1,8 +1,17 @@
-# FinDocPipeline: Your No-Code ETL Solution for Financial Slide Decks
+# FinDocPipeline: Enhanced Document Processing with Transcript Recognition
 
-FinDocPipeline transforms messy, unstructured earnings-deck text into clean, analysis-ready data—without requiring any Python. From extract to load, it automates the heavy lifting so you get:
+FinDocPipeline transforms messy, unstructured financial documents into clean, analysis-ready data—without requiring any Python. Now with **transcript recognition capabilities** for earnings calls and investor meetings. From extract to load, it automates the heavy lifting so you get:
 
 ## 🎯 What You Get
+
+### 🎙️ NEW: Transcript Recognition
+• **Document Type Selection**: Choose between Financial Summary, Presentation, or Transcript
+• **Speaker Detection**: Automatically identifies speakers using NLP pattern matching
+• **Role Classification**: Categorizes speakers (CEO, CFO, Analyst, Moderator, etc.)
+• **Bank Identification**: Extracts bank names from document content
+• **Quarter Detection**: Identifies reporting periods (Q1 2024, etc.)
+• **Custom Schema**: Outputs Bank, Quarter, Speaker, Role, Paragraph, Word Count columns
+• **Topic Categorization**: Classifies content (opening_remarks, financial_results, qa_session, etc.)
 
 ### A Clean Text Dataset
 • **Merges** all slide and table text into one cohesive "clean_text" column per slide  
