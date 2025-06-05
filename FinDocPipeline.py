@@ -364,35 +364,51 @@ class TranscriptSchema:
         if df.empty:
             return json.dumps({"error": "No valid transcript data found"}, indent=2)
         
-        # Create metadata
+        # Create metadata with proper type conversion
         metadata = {
             "filename": filename,
             "document_type": "transcript",
-            "bank": df['bank'].iloc[0] if not df.empty else "Unknown",
-            "quarter": df['quarter'].iloc[0] if not df.empty else "Unknown",
+            "bank": str(df['bank'].iloc[0]) if not df.empty else "Unknown",
+            "quarter": str(df['quarter'].iloc[0]) if not df.empty else "Unknown",
             "processed_at": datetime.now().isoformat(),
-            "total_records": len(df),
-            "total_speakers": df['speaker'].nunique(),
-            "total_words": df['word_count'].sum()
+            "total_records": int(len(df)),
+            "total_speakers": int(df['speaker'].nunique()),
+            "total_words": int(df['word_count'].sum())
         }
         
-        # Create speaker summary
+        # Create speaker summary with proper type conversion
         speaker_summary = []
         for speaker in df['speaker'].unique():
             speaker_data = df[df['speaker'] == speaker]
             speaker_summary.append({
-                "name": speaker,
-                "role": speaker_data['role'].iloc[0],
-                "total_words": speaker_data['word_count'].sum(),
-                "paragraphs": len(speaker_data),
-                "avg_confidence": round(speaker_data['confidence'].mean(), 2)
+                "name": str(speaker),
+                "role": str(speaker_data['role'].iloc[0]),
+                "total_words": int(speaker_data['word_count'].sum()),
+                "paragraphs": int(len(speaker_data)),
+                "avg_confidence": float(round(speaker_data['confidence'].mean(), 2))
             })
+        
+        # Convert DataFrame to dict with proper type conversion
+        transcript_data = []
+        for _, row in df.iterrows():
+            record = {}
+            for col in df.columns:
+                value = row[col]
+                if pd.isna(value):
+                    record[col] = None
+                elif isinstance(value, (np.integer, np.int64)):
+                    record[col] = int(value)
+                elif isinstance(value, (np.floating, np.float64)):
+                    record[col] = float(value)
+                else:
+                    record[col] = str(value)
+            transcript_data.append(record)
         
         # Create structured output
         result = {
             "document_metadata": metadata,
             "speakers": speaker_summary,
-            "transcript_data": df.to_dict(orient="records")
+            "transcript_data": transcript_data
         }
         
         return json.dumps(result, indent=2, ensure_ascii=False)
