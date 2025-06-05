@@ -397,15 +397,130 @@ class TranscriptSchema:
         
         return json.dumps(result, indent=2, ensure_ascii=False)
 
+# Import the comprehensive parser from previous implementation
+class ComprehensiveFinancialParser:
+    """Comprehensive parser that captures ALL text plus enhanced table/chart interpretation"""
+    
+    def __init__(self):
+        self.pdf_methods = []
+        self._check_available_methods()
+    
+    def _check_available_methods(self):
+        """Check which PDF processing methods are available"""
+        try:
+            import pdfplumber
+            self.pdf_methods.append('pdfplumber')
+        except ImportError:
+            pass
+        
+        try:
+            import fitz
+            self.pdf_methods.append('pymupdf')
+        except ImportError:
+            pass
+    
+    def extract_comprehensive_data(self, pdf_path):
+        """Extract ALL text content plus enhanced structural analysis"""
+        if 'pdfplumber' in self.pdf_methods:
+            return self._extract_with_pdfplumber(pdf_path)
+        elif 'pymupdf' in self.pdf_methods:
+            return self._extract_with_pymupdf(pdf_path)
+        else:
+            raise Exception("No PDF processing libraries available")
+    
+    def _extract_with_pdfplumber(self, pdf_path):
+        """Comprehensive extraction using pdfplumber"""
+        import pdfplumber
+        pages_data = []
+        
+        with pdfplumber.open(pdf_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                # Extract ALL text content
+                full_text = page.extract_text() or ""
+                
+                page_data = {
+                    'page': page_num + 1,
+                    'method': 'pdfplumber_comprehensive',
+                    'full_text': full_text,
+                    'word_count': len(full_text.split()),
+                    'char_count': len(full_text),
+                    'line_count': len(full_text.split('\n')),
+                    'tables': [],
+                    'financial_metrics': {},
+                    'chart_indicators': []
+                }
+                
+                # Extract tables with full structure
+                try:
+                    tables = page.extract_tables()
+                    if tables:
+                        for table_idx, table in enumerate(tables):
+                            if table and len(table) > 0:
+                                table_text = self._table_to_text(table)
+                                page_data['tables'].append({
+                                    'table_id': table_idx,
+                                    'table_text': table_text,
+                                    'table_data': table,
+                                    'row_count': len(table),
+                                    'col_count': len(table[0]) if table else 0
+                                })
+                except Exception as e:
+                    st.warning(f"Table extraction error on page {page_num + 1}: {str(e)}")
+                
+                pages_data.append(page_data)
+        
+        return pages_data
+    
+    def _extract_with_pymupdf(self, pdf_path):
+        """Comprehensive extraction using PyMuPDF"""
+        import fitz
+        pages_data = []
+        
+        doc = fitz.open(pdf_path)
+        for page_num in range(len(doc)):
+            page = doc.load_page(page_num)
+            full_text = page.get_text()
+            
+            page_data = {
+                'page': page_num + 1,
+                'method': 'pymupdf_comprehensive',
+                'full_text': full_text,
+                'word_count': len(full_text.split()),
+                'char_count': len(full_text),
+                'line_count': len(full_text.split('\n')),
+                'tables': [],
+                'financial_metrics': {},
+                'chart_indicators': []
+            }
+            
+            pages_data.append(page_data)
+        
+        doc.close()
+        return pages_data
+    
+    def _table_to_text(self, table):
+        """Convert table structure to readable text"""
+        if not table:
+            return ""
+        
+        text_lines = []
+        for row in table:
+            if row:
+                # Filter out None values and convert to strings
+                clean_row = [str(cell) if cell is not None else "" for cell in row]
+                text_lines.append(" | ".join(clean_row))
+        
+        return "\n".join(text_lines)
+
 def main():
     st.set_page_config(
-        page_title="FinDocPipeline - Transcript Recognition",
+        page_title="FinDocPipeline v2.0 - Enhanced Document Processing",
         page_icon="🎙️",
         layout="wide",
         initial_sidebar_state="expanded"
     )
     
-    st.title("🎙️ FinDocPipeline - Enhanced Document Processing")
+    st.title("🎙️ FinDocPipeline v2.0 - Enhanced Document Processing")
     st.markdown("**No-Code ETL Solution for Financial Documents with Transcript Recognition**")
     
     # Document Type Selection
@@ -415,7 +530,7 @@ def main():
     document_type = st.radio(
         "Select the type of document you're uploading:",
         options=["📊 Financial Summary", "📈 Presentation", "🎙️ Transcript"],
-        index=2,  # Default to transcript for testing
+        index=0,  # Default to financial summary
         help="Choose the document type for optimized processing"
     )
     
@@ -498,11 +613,11 @@ def main():
                             base_filename = uploaded_file.name.replace('.pdf', '')
                             
                             st.download_button(
-                                label="📊 Download Transcript CSV",
+                                label="📊 Download CSV",
                                 data=transcript_csv,
                                 file_name=f"{base_filename}_transcript_{timestamp}.csv",
                                 mime="text/csv",
-                                help="Download transcript data as CSV with Bank, Quarter, Speaker, Role, Paragraph, Word Count columns"
+                                help="Download transcript data as CSV file"
                             )
                         
                         with col2:
@@ -510,7 +625,7 @@ def main():
                             transcript_json = transcript_schema.to_json(transcript_data, uploaded_file.name)
                             
                             st.download_button(
-                                label="📋 Download Transcript JSON",
+                                label="📋 Download JSON",
                                 data=transcript_json,
                                 file_name=f"{base_filename}_transcript_{timestamp}.json",
                                 mime="application/json",
@@ -522,25 +637,145 @@ def main():
                         st.dataframe(transcript_df.head(10), use_container_width=True)
                     
                     else:
-                        st.warning("⚠️ No transcript data could be extracted. The document may not be a properly formatted transcript.")
+                        st.warning("⚠️ No transcript data could be extracted. Please check if the document contains speaker segments.")
                 
                 else:
-                    # Placeholder for financial processing
-                    st.info("📊 Financial document processing not implemented in this demo version.")
-                    st.info("This demo focuses on transcript recognition functionality.")
-            
+                    # Financial document processing pipeline
+                    st.info("📊 Processing as financial document...")
+                    
+                    with st.spinner("📊 EXTRACT: Reading document content..."):
+                        parser = ComprehensiveFinancialParser()
+                        pages_data = parser.extract_comprehensive_data(tmp_path)
+                    
+                    with st.spinner("🔄 TRANSFORM: Processing financial data..."):
+                        # Create comprehensive dataset
+                        all_data = []
+                        for page_data in pages_data:
+                            page_num = page_data['page']
+                            full_text = page_data['full_text']
+                            
+                            # Basic text processing
+                            cleaned_text = re.sub(r'\s+', ' ', full_text).strip()
+                            
+                            all_data.append({
+                                'page_number': page_num,
+                                'extraction_method': page_data.get('method', 'unknown'),
+                                'full_text': full_text,
+                                'cleaned_text': cleaned_text,
+                                'word_count': page_data.get('word_count', 0),
+                                'char_count': page_data.get('char_count', 0),
+                                'line_count': page_data.get('line_count', 0),
+                                'table_count': len(page_data.get('tables', [])),
+                                'has_tables': len(page_data.get('tables', [])) > 0
+                            })
+                    
+                    # Create DataFrame
+                    df = pd.DataFrame(all_data)
+                    
+                    # Display financial processing results
+                    st.success(f"✅ Financial Processing Complete: {uploaded_file.name} ({len(df)} pages processed)")
+                    
+                    # Show summary metrics
+                    if not df.empty:
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Pages", len(df))
+                        with col2:
+                            st.metric("Total Words", df['word_count'].sum())
+                        with col3:
+                            st.metric("Pages with Tables", df['has_tables'].sum())
+                        with col4:
+                            st.metric("Total Characters", df['char_count'].sum())
+                        
+                        # Export options for financial data
+                        st.subheader("📥 Export Financial Data")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            # CSV Export
+                            csv_data = df.to_csv(index=False)
+                            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                            base_filename = uploaded_file.name.replace('.pdf', '')
+                            
+                            st.download_button(
+                                label="📊 Download CSV",
+                                data=csv_data,
+                                file_name=f"{base_filename}_financial_{timestamp}.csv",
+                                mime="text/csv",
+                                help="Download financial data as CSV file"
+                            )
+                        
+                        with col2:
+                            # JSON Export
+                            json_data = df.to_json(orient='records', indent=2)
+                            
+                            st.download_button(
+                                label="📋 Download JSON",
+                                data=json_data,
+                                file_name=f"{base_filename}_financial_{timestamp}.json",
+                                mime="application/json",
+                                help="Download financial data as JSON"
+                            )
+                        
+                        # Show sample data
+                        st.subheader("📋 Sample Financial Data")
+                        display_df = df[['page_number', 'word_count', 'char_count', 'table_count', 'has_tables']].head(10)
+                        st.dataframe(display_df, use_container_width=True)
+                        
+                        # Show text preview
+                        st.subheader("📄 Text Preview")
+                        if len(df) > 0:
+                            preview_text = df.iloc[0]['cleaned_text'][:1000]
+                            st.text_area("First page preview (first 1000 characters):", preview_text, height=200)
+                    
+                    else:
+                        st.warning("⚠️ No financial data could be extracted from the document.")
+                
             finally:
+                # Clean up temporary file
                 try:
                     os.unlink(tmp_path)
                 except:
                     pass
-        
+                    
         except Exception as e:
-            st.error(f"Error processing document: {str(e)}")
+            st.error(f"❌ Error processing document: {str(e)}")
+            st.error("Please check that you have the required PDF processing libraries installed.")
     
-    # Footer
-    st.markdown("---")
-    st.markdown("**FinDocPipeline - Transcript Recognition Demo** - Enhanced document processing with transcript capabilities")
+    # Sidebar with information
+    with st.sidebar:
+        st.header("ℹ️ About FinDocPipeline v2.0")
+        st.markdown("""
+        **Enhanced Features:**
+        - 🎙️ **Transcript Recognition**: Extract speaker data from earnings calls
+        - 📊 **Financial Processing**: Extract metrics and tables from reports
+        - 📈 **Multi-format Support**: Handle presentations and summaries
+        - 🔄 **Flexible Export**: CSV and JSON download options
+        
+        **Supported Document Types:**
+        - Financial summaries and reports
+        - Earnings presentations
+        - Investor meeting transcripts
+        - Quarterly earnings calls
+        
+        **Requirements:**
+        - PDF files only
+        - Recommended: pdfplumber or PyMuPDF libraries
+        """)
+        
+        st.header("🔧 System Status")
+        
+        # Check library availability
+        try:
+            import pdfplumber
+            st.success("✅ pdfplumber available")
+        except ImportError:
+            st.warning("⚠️ pdfplumber not available")
+        
+        if PYMUPDF_AVAILABLE:
+            st.success("✅ PyMuPDF available")
+        else:
+            st.warning("⚠️ PyMuPDF not available")
 
 if __name__ == "__main__":
     main()
